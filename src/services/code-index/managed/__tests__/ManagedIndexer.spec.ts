@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import * as vscode from "vscode"
 import { ManagedIndexer } from "../ManagedIndexer"
+import { ContextProxy } from "../../../../core/config/ContextProxy"
 import { GitWatcher, GitWatcherEvent } from "../../../../shared/GitWatcher"
 import { OrganizationService } from "../../../kilocode/OrganizationService"
 import * as gitUtils from "../git-utils"
@@ -43,22 +44,27 @@ vi.mock("fs", () => ({
 }))
 
 describe("ManagedIndexer", () => {
-	let mockProvider: any
+	let mockContextProxy: any
 	let indexer: ManagedIndexer
 	let mockWorkspaceFolder: vscode.WorkspaceFolder
 
 	beforeEach(() => {
 		vi.clearAllMocks()
 
-		// Setup mock provider
-		mockProvider = {
-			getState: vi.fn().mockResolvedValue({
-				apiConfiguration: {
-					kilocodeOrganizationId: "test-org-id",
-					kilocodeToken: "test-token",
-					kilocodeTesterWarningsDisabledUntil: null,
-				},
+		// Setup mock ContextProxy
+		mockContextProxy = {
+			getSecret: vi.fn((key: string) => {
+				if (key === "kilocodeToken") return "test-token"
+				return null
 			}),
+			getValue: vi.fn((key: string) => {
+				if (key === "kilocodeOrganizationId") return "test-org-id"
+				if (key === "kilocodeTesterWarningsDisabledUntil") return null
+				return null
+			}),
+			onManagedIndexerConfigChange: vi.fn(() => ({
+				dispose: vi.fn(),
+			})),
 		}
 
 		// Setup mock workspace folder
@@ -101,7 +107,7 @@ describe("ManagedIndexer", () => {
 			return mockWatcher as any
 		})
 
-		indexer = new ManagedIndexer(mockProvider)
+		indexer = new ManagedIndexer(mockContextProxy)
 	})
 
 	afterEach(() => {
@@ -111,7 +117,10 @@ describe("ManagedIndexer", () => {
 	describe("constructor", () => {
 		it("should create a ManagedIndexer instance", () => {
 			expect(indexer).toBeInstanceOf(ManagedIndexer)
-			expect(indexer.provider).toBe(mockProvider)
+		})
+
+		it("should subscribe to configuration changes", () => {
+			expect(mockContextProxy.onManagedIndexerConfigChange).toHaveBeenCalled()
 		})
 
 		it("should initialize with empty workspaceFolderState", () => {
@@ -124,10 +133,12 @@ describe("ManagedIndexer", () => {
 	})
 
 	describe("fetchConfig", () => {
-		it("should fetch config from provider", async () => {
+		it("should fetch config from ContextProxy", async () => {
 			const config = await indexer.fetchConfig()
 
-			expect(mockProvider.getState).toHaveBeenCalled()
+			expect(mockContextProxy.getSecret).toHaveBeenCalledWith("kilocodeToken")
+			expect(mockContextProxy.getValue).toHaveBeenCalledWith("kilocodeOrganizationId")
+			expect(mockContextProxy.getValue).toHaveBeenCalledWith("kilocodeTesterWarningsDisabledUntil")
 			expect(config).toEqual({
 				kilocodeOrganizationId: "test-org-id",
 				kilocodeToken: "test-token",
@@ -146,9 +157,8 @@ describe("ManagedIndexer", () => {
 		})
 
 		it("should handle missing config values", async () => {
-			mockProvider.getState.mockResolvedValue({
-				apiConfiguration: {},
-			})
+			mockContextProxy.getSecret.mockReturnValue(null)
+			mockContextProxy.getValue.mockReturnValue(null)
 
 			const config = await indexer.fetchConfig()
 
@@ -172,12 +182,7 @@ describe("ManagedIndexer", () => {
 		})
 
 		it("should return null when token is missing", async () => {
-			mockProvider.getState.mockResolvedValue({
-				apiConfiguration: {
-					kilocodeOrganizationId: "test-org-id",
-					kilocodeToken: null,
-				},
-			})
+			mockContextProxy.getSecret.mockReturnValue(null)
 
 			const org = await indexer.fetchOrganization()
 
@@ -186,11 +191,10 @@ describe("ManagedIndexer", () => {
 		})
 
 		it("should return null when org ID is missing", async () => {
-			mockProvider.getState.mockResolvedValue({
-				apiConfiguration: {
-					kilocodeOrganizationId: null,
-					kilocodeToken: "test-token",
-				},
+			mockContextProxy.getValue.mockImplementation((key: string) => {
+				if (key === "kilocodeOrganizationId") return null
+				if (key === "kilocodeTesterWarningsDisabledUntil") return null
+				return null
 			})
 
 			const org = await indexer.fetchOrganization()
@@ -257,12 +261,7 @@ describe("ManagedIndexer", () => {
 		})
 
 		it("should not start when token is missing", async () => {
-			mockProvider.getState.mockResolvedValue({
-				apiConfiguration: {
-					kilocodeOrganizationId: "test-org-id",
-					kilocodeToken: null,
-				},
-			})
+			mockContextProxy.getSecret.mockReturnValue(null)
 
 			await indexer.start()
 
@@ -271,11 +270,9 @@ describe("ManagedIndexer", () => {
 		})
 
 		it("should not start when organization ID is missing", async () => {
-			mockProvider.getState.mockResolvedValue({
-				apiConfiguration: {
-					kilocodeOrganizationId: null,
-					kilocodeToken: "test-token",
-				},
+			mockContextProxy.getValue.mockImplementation((key: string) => {
+				if (key === "kilocodeOrganizationId") return null
+				return null
 			})
 
 			await indexer.start()
@@ -479,6 +476,16 @@ describe("ManagedIndexer", () => {
 
 			expect(mockDispose).toHaveBeenCalled()
 			expect(indexer.workspaceFoldersListener).toBeNull()
+		})
+
+		it("should dispose configChangeListener", () => {
+			const mockDispose = vi.fn()
+			indexer.configChangeListener = { dispose: mockDispose } as any
+
+			indexer.dispose()
+
+			expect(mockDispose).toHaveBeenCalled()
+			expect(indexer.configChangeListener).toBeNull()
 		})
 	})
 
@@ -728,21 +735,6 @@ describe("ManagedIndexer", () => {
 					expect.stringContaining("[ManagedIndexer] Failed to upsert file test.ts: API error"),
 				)
 			})
-		})
-	})
-
-	describe("onKilocodeTokenChange", () => {
-		it("should dispose and restart", async () => {
-			vi.mocked(vscode.workspace).workspaceFolders = [mockWorkspaceFolder]
-			await indexer.start()
-
-			const disposeSpy = vi.spyOn(indexer, "dispose")
-			const startSpy = vi.spyOn(indexer, "start")
-
-			await indexer.onKilocodeTokenChange()
-
-			expect(disposeSpy).toHaveBeenCalled()
-			expect(startSpy).toHaveBeenCalled()
 		})
 	})
 

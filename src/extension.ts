@@ -46,6 +46,7 @@ import { registerGhostProvider } from "./services/ghost" // kilocode_change
 import { registerMainThreadForwardingLogger } from "./utils/fowardingLogger" // kilocode_change
 import { getKiloCodeWrapperProperties } from "./core/kilocode/wrapper" // kilocode_change
 import { flushModels, getModels } from "./api/providers/fetchers/modelCache"
+import { ManagedIndexer } from "./services/code-index/managed/ManagedIndexer" // kilocode_change
 import { updateCodeIndexWithKiloProps } from "./services/code-index/managed/webview" // kilocode_change
 
 /**
@@ -156,6 +157,16 @@ export async function activate(context: vscode.ExtensionContext) {
 	}
 
 	// Initialize the provider *before* the Roo Code Cloud service.
+
+	// kilocode_change start: Initialize ManagedIndexer
+	const managedIndexer = new ManagedIndexer(contextProxy)
+	context.subscriptions.push(managedIndexer)
+	managedIndexer.start().catch((error) => {
+		outputChannel.appendLine(
+			`Failed to start ManagedIndexer: ${error instanceof Error ? error.message : String(error)}`,
+		)
+	})
+	// kilocode_change end
 	const provider = new ClineProvider(context, outputChannel, "sidebar", contextProxy, mdmService)
 	const initManagedCodeIndexing = updateCodeIndexWithKiloProps(provider) // kilocode_change
 

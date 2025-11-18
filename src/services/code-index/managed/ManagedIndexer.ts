@@ -4,7 +4,7 @@ import * as vscode from "vscode"
 import * as path from "path"
 import { promises as fs } from "fs"
 import pLimit from "p-limit"
-import type { ClineProvider } from "../../../core/webview/ClineProvider"
+import { ContextProxy } from "../../../core/config/ContextProxy"
 import { KiloOrganization } from "../../../shared/kilocode/organization"
 import { OrganizationService } from "../../kilocode/OrganizationService"
 import { GitWatcher, GitWatcherEvent } from "../../../shared/GitWatcher"
@@ -55,6 +55,8 @@ interface ManagedIndexerWorkspaceFolderState {
 export class ManagedIndexer implements vscode.Disposable {
 	// Handle changes to vscode workspace folder changes
 	workspaceFoldersListener: vscode.Disposable | null = null
+	// kilocode_change: Listen to configuration changes from ContextProxy
+	configChangeListener: vscode.Disposable | null = null
 	config: ManagedIndexerConfig | null = null
 	organization: KiloOrganization | null = null
 	isActive = false
@@ -67,28 +69,30 @@ export class ManagedIndexer implements vscode.Disposable {
 	// Concurrency limiter for file upserts
 	private readonly fileUpsertLimit = pLimit(MANAGED_MAX_CONCURRENT_FILES)
 
-	constructor(
-		/**
-		 * We need to pass through the main ClineProvider for access to global state
-		 * and to react to changes in organizations/profiles
-		 */
-		public provider: ClineProvider,
-	) {}
+	constructor(public contextProxy: ContextProxy) {}
+
+	private async onConfigurationChange(config: ManagedIndexerConfig): Promise<void> {
+		logger.info("[ManagedIndexer] Configuration changed, restarting...")
+		this.config = config
+		this.dispose()
+		await this.start()
+	}
 
 	// TODO: The fetchConfig, fetchOrganization, and isEnabled functions are sort of spaghetti
 	// code right now. We need to clean this up to be more stateless or better rely
 	// on proper memoization/invalidation techniques
 
 	async fetchConfig(): Promise<ManagedIndexerConfig> {
-		const {
-			apiConfiguration: {
-				kilocodeOrganizationId = null,
-				kilocodeToken = null,
-				kilocodeTesterWarningsDisabledUntil = null,
-			},
-		} = await this.provider.getState()
+		// kilocode_change: Read directly from ContextProxy instead of ClineProvider
+		const kilocodeToken = this.contextProxy.getSecret("kilocodeToken")
+		const kilocodeOrganizationId = this.contextProxy.getValue("kilocodeOrganizationId")
+		const kilocodeTesterWarningsDisabledUntil = this.contextProxy.getValue("kilocodeTesterWarningsDisabledUntil")
 
-		this.config = { kilocodeOrganizationId, kilocodeToken, kilocodeTesterWarningsDisabledUntil }
+		this.config = {
+			kilocodeToken: kilocodeToken ?? null,
+			kilocodeOrganizationId: kilocodeOrganizationId ?? null,
+			kilocodeTesterWarningsDisabledUntil: kilocodeTesterWarningsDisabledUntil ?? null,
+		}
 
 		return this.config
 	}
@@ -127,7 +131,10 @@ export class ManagedIndexer implements vscode.Disposable {
 	}
 
 	async start() {
-		vscode.workspace.onDidChangeWorkspaceFolders(this.onDidChangeWorkspaceFolders)
+		this.configChangeListener = this.contextProxy.onManagedIndexerConfigChange(
+			this.onConfigurationChange.bind(this),
+		)
+		vscode.workspace.onDidChangeWorkspaceFolders(this.onDidChangeWorkspaceFolders.bind(this))
 
 		if (!vscode.workspace.workspaceFolders?.length) {
 			console.log("[ManagedIndexer] No workspace folders found, skipping managed indexing")
@@ -261,6 +268,10 @@ export class ManagedIndexer implements vscode.Disposable {
 	}
 
 	dispose() {
+		// kilocode_change: Dispose configuration change listener
+		this.configChangeListener?.dispose()
+		this.configChangeListener = null
+
 		this.workspaceFoldersListener?.dispose()
 		this.workspaceFoldersListener = null
 
@@ -373,14 +384,6 @@ export class ManagedIndexer implements vscode.Disposable {
 				})
 			}
 		}
-	}
-
-	/**
-	 * Call this function from ClineProvider when a profile change occurs
-	 */
-	async onKilocodeTokenChange() {
-		this.dispose()
-		await this.start()
 	}
 
 	async onDidChangeWorkspaceFolders(e: vscode.WorkspaceFoldersChangeEvent) {
