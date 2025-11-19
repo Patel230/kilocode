@@ -1774,6 +1774,9 @@ importers:
       isbinaryfile:
         specifier: ^5.0.2
         version: 5.0.4
+      jotai:
+        specifier: ^2.14.0
+        version: 2.14.0(@babel/core@7.28.3)(@babel/template@7.27.2)(@types/react@18.3.23)(react@19.2.0)
       js-tiktoken:
         specifier: ^1.0.8
         version: 1.0.21

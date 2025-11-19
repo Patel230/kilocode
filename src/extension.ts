@@ -46,9 +46,10 @@ import { registerGhostProvider } from "./services/ghost" // kilocode_change
 import { registerMainThreadForwardingLogger } from "./utils/fowardingLogger" // kilocode_change
 import { getKiloCodeWrapperProperties } from "./core/kilocode/wrapper" // kilocode_change
 import { flushModels, getModels } from "./api/providers/fetchers/modelCache"
-import { ManagedIndexer } from "./services/code-index/managed/ManagedIndexer" // kilocode_change
+// import { ManagedIndexer } from "./services/code-index/managed/ManagedIndexer" // kilocode_change
 import { updateCodeIndexWithKiloProps } from "./services/code-index/managed/webview" // kilocode_change
 import { getCommand } from "./utils/commands"
+import { ManagedIndexer } from "./services/code-index/managed/ManagedIndexerRefactored"
 
 /**
  * Built using https://github.com/microsoft/vscode-webview-ui-toolkit
