@@ -271,6 +271,15 @@ export class CodeIndexManager {
 	}
 
 	/**
+	 * Clears any stored error state without tearing down services.
+	 * Used by UI flows (e.g. Clear Index Data) that want to dismiss an error banner
+	 * even if configuration remains invalid.
+	 */
+	public clearErrorState(): void {
+		this._stateManager.setSystemState("Standby", "")
+	}
+
+	/**
 	 * Cleans up the manager instance.
 	 */
 	public dispose(): void {

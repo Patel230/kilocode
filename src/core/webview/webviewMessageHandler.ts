@@ -3411,23 +3411,41 @@ export const webviewMessageHandler = async (
 		}
 		// kilocode_change end
 		case "clearIndexData": {
+			const manager = provider.getCurrentWorkspaceCodeIndexManager()
+			if (!manager) {
+				provider.log("Cannot clear index data: No workspace folder open")
+				provider.postMessageToWebview({
+					type: "indexCleared",
+					values: {
+						success: false,
+						error: t("embeddings:orchestrator.indexingRequiresWorkspace"),
+					},
+				})
+				break
+			}
+
 			try {
-				const manager = provider.getCurrentWorkspaceCodeIndexManager()
-				if (!manager) {
-					provider.log("Cannot clear index data: No workspace folder open")
-					provider.postMessageToWebview({
-						type: "indexCleared",
-						values: {
-							success: false,
-							error: t("embeddings:orchestrator.indexingRequiresWorkspace"),
-						},
-					})
-					return
-				}
+				// Clear any prior error banner in UI even if config is still invalid.
+				manager.clearErrorState()
+
 				await manager.clearIndexData()
+
+				// Push a fresh status update so the webview stops showing stale Error state.
+				provider.postMessageToWebview({
+					type: "indexingStatusUpdate",
+					values: manager.getCurrentStatus(),
+				})
+
 				provider.postMessageToWebview({ type: "indexCleared", values: { success: true } })
 			} catch (error) {
 				provider.log(`Error clearing index data: ${error instanceof Error ? error.message : String(error)}`)
+
+				// Still send current (cleared) status to dismiss stale error UI.
+				provider.postMessageToWebview({
+					type: "indexingStatusUpdate",
+					values: manager.getCurrentStatus(),
+				})
+
 				provider.postMessageToWebview({
 					type: "indexCleared",
 					values: {
