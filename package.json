@@ -39,7 +39,7 @@
 		"cli:run": "pnpm --filter @kilocode/cli run start",
 		"docs:start": "pnpm --filter kilocode-docs start",
 		"docs:build": "pnpm --filter kilocode-docs build",
-		"export:types": "rimraf generate-types/extension && pnpm tsc --project generate-types/tsconfig.export.json"
+		"export:types": "rimraf generated-types/extension && pnpm tsc --project generated-types/tsconfig.export.json"
 	},
 	"devDependencies": {
 		"@changesets/changelog-github": "^0.5.1",

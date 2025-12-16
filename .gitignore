@@ -70,4 +70,4 @@ qdrant_storage/
 # Act Secret Files
 .secrets
 
-generate-types/extension
+generated-types/extension
