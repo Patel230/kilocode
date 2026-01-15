@@ -86,7 +86,18 @@ export function getApiMetrics(messages: ClineMessage[]) {
 
 	// Calculate context tokens, from the last API request started or condense
 	// context message.
+	//
+	// IMPORTANT: We need to find the last message that has ACTUAL token data,
+	// not just a placeholder message. Placeholder messages are created when an
+	// API request starts but before the response arrives - they only contain
+	// `apiProtocol` without `tokensIn`/`tokensOut`. If we use a placeholder
+	// message, the context indicator will show 0 and flicker when the real
+	// data arrives.
+	//
+	// We track whether we found valid token data using `foundValidTokenData`
+	// and only break when we have actual data (not just 0 from a placeholder).
 	result.contextTokens = 0
+	let foundValidTokenData = false
 
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const message = messages[i]
@@ -96,18 +107,32 @@ export function getApiMetrics(messages: ClineMessage[]) {
 				const parsedText: ParsedApiReqStartedTextType = JSON.parse(message.text)
 				const { tokensIn, tokensOut } = parsedText
 
-				// Since tokensIn now stores TOTAL input tokens (including cache tokens),
-				// we no longer need to add cacheWrites and cacheReads separately.
-				// This applies to both Anthropic and OpenAI protocols.
-				result.contextTokens = (tokensIn || 0) + (tokensOut || 0)
+				// Check if this message has actual token data (not a placeholder).
+				// Placeholder messages only have `apiProtocol` without token fields.
+				// We check for `typeof === "number"` because:
+				// - undefined/missing fields indicate a placeholder
+				// - 0 is a valid value (though rare) that we should accept
+				const hasTokenData = typeof tokensIn === "number" || typeof tokensOut === "number"
+
+				if (hasTokenData) {
+					// Since tokensIn now stores TOTAL input tokens (including cache tokens),
+					// we no longer need to add cacheWrites and cacheReads separately.
+					// This applies to both Anthropic and OpenAI protocols.
+					result.contextTokens = (tokensIn || 0) + (tokensOut || 0)
+					foundValidTokenData = true
+				}
+				// If no token data, this is a placeholder - continue searching backwards
 			} catch (error) {
 				console.error("Error parsing JSON:", error)
 				continue
 			}
 		} else if (message.type === "say" && message.say === "condense_context") {
 			result.contextTokens = message.contextCondense?.newContextTokens ?? 0
+			foundValidTokenData = true
 		}
-		if (result.contextTokens) {
+
+		// Only break if we found valid token data
+		if (foundValidTokenData) {
 			break
 		}
 	}
