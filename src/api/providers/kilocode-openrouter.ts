@@ -120,7 +120,6 @@ export class KilocodeOpenrouterHandler extends OpenRouterHandler {
 	}
 
 	public override async fetchModel() {
-		// kilocode_change: Allow anonymous access - only require openRouterBaseUrl
 		if (!this.options.openRouterBaseUrl) {
 			throw new Error("OpenRouter base URL is required")
 		}

@@ -20,7 +20,6 @@ import { Mode, modes } from "../../shared/modes"
 import { migrateMorphApiKey } from "./kilocode/migrateMorphApiKey"
 import { buildApiHandler } from "../../api"
 import { t } from "../../i18n" // kilocode_change - autocomplete profile type system
-import { getModels } from "../../api/providers/fetchers/modelCache" // kilocode_change: Anonymous kilocode onboarding
 
 // Type-safe model migrations mapping
 type ModelMigrations = {
@@ -53,7 +52,6 @@ export const providerProfilesSchema = z.object({
 			todoListEnabledMigrated: z.boolean().optional(),
 			morphApiKeyMigrated: z.boolean().optional(), // kilocode_change: Morph API key migration
 			claudeCodeLegacySettingsMigrated: z.boolean().optional(),
-			kilocodeDefaultProfileMigrated: z.boolean().optional(), // kilocode_change: Anonymous kilocode onboarding
 		})
 		.optional(),
 })
@@ -68,9 +66,16 @@ export class ProviderSettingsManager {
 		modes.map((mode) => [mode.slug, this.defaultConfigId]),
 	)
 
+	// kilocode_change start: Anonymous kilocode onboarding - set default provider for new users
 	private readonly defaultProviderProfiles: ProviderProfiles = {
 		currentApiConfigName: "default",
-		apiConfigs: { default: { id: this.defaultConfigId } },
+		apiConfigs: {
+			default: {
+				id: this.defaultConfigId,
+				apiProvider: "kilocode",
+				kilocodeModel: "google/gemma-2-9b-it:free",
+			},
+		},
 		modeApiConfigs: this.defaultModeApiConfigs,
 		migrations: {
 			rateLimitSecondsMigrated: true, // Mark as migrated on fresh installs
@@ -81,6 +86,7 @@ export class ProviderSettingsManager {
 			claudeCodeLegacySettingsMigrated: true, // Mark as migrated on fresh installs
 		},
 	}
+	// kilocode_change end
 
 	// kilocode_change start
 	private pendingDuplicateIdRepairReport: Record<string, string[]> | null = null
@@ -142,10 +148,15 @@ export class ProviderSettingsManager {
 	async init_runMigrations() {
 		try {
 			return await this.lock(async () => {
-				const providerProfiles = await this.load()
+				// kilocode_change start: Check if this is a new user (no stored config)
+				const storedContent = await this.context.secrets.get(this.secretsKey)
+				const isNewUser = !storedContent
+				// kilocode_change end
 
-				if (!providerProfiles) {
-					await this.store(this.defaultProviderProfiles)
+				const providerProfiles = await this.loadFromContent(storedContent)
+
+				if (isNewUser) {
+					await this.store(providerProfiles)
 					return
 				}
 
@@ -316,14 +327,6 @@ export class ProviderSettingsManager {
 					isDirty = true
 				}
 
-				// kilocode_change start: Anonymous kilocode onboarding
-				if (!providerProfiles.migrations.kilocodeDefaultProfileMigrated) {
-					await this.initializeKilocodeDefaultProfile(providerProfiles)
-					providerProfiles.migrations.kilocodeDefaultProfileMigrated = true
-					isDirty = true
-				}
-				// kilocode_change end
-
 				if (isDirty) {
 					await this.store(providerProfiles)
 				}
@@ -440,52 +443,6 @@ export class ProviderSettingsManager {
 			console.error(`[MigrateTodoListEnabled] Failed to migrate todo list enabled setting:`, error)
 		}
 	}
-
-	// kilocode_change start: Anonymous kilocode onboarding
-	/**
-	 * Initialize the default profile with kilocode provider for users without existing config.
-	 * This enables anonymous access to Kilo Code Gateway with a free model.
-	 */
-	private async initializeKilocodeDefaultProfile(providerProfiles: ProviderProfiles): Promise<void> {
-		const FALLBACK_FREE_MODEL = "google/gemma-2-9b-it:free"
-
-		// Check if ANY profile has a configured provider
-		const hasConfiguredProvider = Object.values(providerProfiles.apiConfigs).some(
-			(config) => config.apiProvider !== undefined,
-		)
-
-		// Only initialize if no profiles have a provider configured
-		if (hasConfiguredProvider) {
-			console.log("[ProviderSettingsManager] Skipping kilocode default - user has existing provider config")
-			return
-		}
-
-		try {
-			// Try to fetch models and find a free one
-			const models = await getModels({ provider: "kilocode" })
-			const freeModel = Object.keys(models).find((id) => id.endsWith(":free")) || FALLBACK_FREE_MODEL
-
-			// Update the default profile with kilocode provider
-			const defaultConfig = providerProfiles.apiConfigs["default"]
-			if (defaultConfig) {
-				defaultConfig.apiProvider = "kilocode"
-				defaultConfig.kilocodeModel = freeModel
-				console.log(`[ProviderSettingsManager] Initialized default kilocode profile with model: ${freeModel}`)
-			}
-		} catch (error) {
-			// Use fallback model if API fails
-			console.error("[ProviderSettingsManager] Failed to fetch models, using fallback:", error)
-			const defaultConfig = providerProfiles.apiConfigs["default"]
-			if (defaultConfig) {
-				defaultConfig.apiProvider = "kilocode"
-				defaultConfig.kilocodeModel = FALLBACK_FREE_MODEL
-				console.log(
-					`[ProviderSettingsManager] Initialized default kilocode profile with fallback model: ${FALLBACK_FREE_MODEL}`,
-				)
-			}
-		}
-	}
-	// kilocode_change end
 
 	/**
 	 * Apply model migrations for all providers
@@ -756,7 +713,8 @@ export class ProviderSettingsManager {
 	public async export() {
 		try {
 			return await this.lock(async () => {
-				const profiles = providerProfilesSchema.parse(await this.load())
+				const providerProfiles = await this.load()
+				const profiles = providerProfilesSchema.parse(providerProfiles)
 				const configs = profiles.apiConfigs
 				for (const name in configs) {
 					// Avoid leaking properties from other providers.
@@ -816,9 +774,13 @@ export class ProviderSettingsManager {
 	}
 
 	private async load(): Promise<ProviderProfiles> {
-		try {
-			const content = await this.context.secrets.get(this.secretsKey)
+		const content = await this.context.secrets.get(this.secretsKey)
+		return this.loadFromContent(content)
+	}
 
+	// kilocode_change start: Extract content parsing to avoid double-fetching in init_runMigrations
+	private loadFromContent(content: string | undefined): ProviderProfiles {
+		try {
 			if (!content) {
 				return this.defaultProviderProfiles
 			}
@@ -857,6 +819,7 @@ export class ProviderSettingsManager {
 			throw new Error(`Failed to read provider profiles from secrets: ${error}`)
 		}
 	}
+	// kilocode_change end
 
 	/**
 	 * Sanitizes a provider config by resetting invalid/removed apiProvider values.
