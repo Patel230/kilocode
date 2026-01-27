@@ -46,6 +46,7 @@
 			"apiKey": "Kilo Code APIキー",
 			"login": "Kilo Codeにログイン",
 			"logout": "Kilo Codeからログアウト",
+			"loginForPremiumModels": "ログインしてプレミアム・無制限モデルにアクセス",
 			"providerRouting": {
 				"title": "プロバイダールーティング",
 				"managedByOrganization": "組織レベルのプロバイダールーティングを管理",

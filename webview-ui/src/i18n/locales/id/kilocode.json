@@ -39,6 +39,7 @@
 			"apiKey": "API Key Kilo Code",
 			"login": "Masuk ke Kilo Code",
 			"logout": "Keluar dari Kilo Code",
+			"loginForPremiumModels": "Masuk untuk mengakses model premium dan tanpa batas",
 			"providerRouting": {
 				"title": "Perutean Penyedia",
 				"managedByOrganization": "Kelola Perutean Penyedia Tingkat Organisasi",

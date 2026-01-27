@@ -51,15 +51,21 @@ describe("ProviderSettingsManager", () => {
 	})
 
 	describe("initialize", () => {
-		it("should not write to storage when secrets.get returns null", async () => {
+		// kilocode_change start: test updated to expect kilocode default profile migration
+		it("should initialize kilocode default profile when secrets.get returns null", async () => {
 			// Mock readConfig to return null
 			mockSecrets.get.mockResolvedValueOnce(null)
 
 			await providerSettingsManager.initialize()
 
-			// Should not write to storage because readConfig returns defaultConfig
-			expect(mockSecrets.store).not.toHaveBeenCalled()
+			// Should write to storage because kilocode default profile migration runs for new users
+			expect(mockSecrets.store).toHaveBeenCalled()
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1])
+			expect(storedConfig.apiConfigs.default.apiProvider).toBe("kilocode")
+			expect(storedConfig.migrations.kilocodeDefaultProfileMigrated).toBe(true)
 		})
+		// kilocode_change end
 
 		it("should not initialize config if it exists and migrations are complete", async () => {
 			mockSecrets.get.mockResolvedValue(
@@ -71,6 +77,7 @@ describe("ProviderSettingsManager", () => {
 							id: "default",
 							diffEnabled: true,
 							fuzzyMatchThreshold: 1.0,
+							apiProvider: "anthropic", // kilocode_change: add provider to prevent kilocode migration
 						},
 					},
 					modeApiConfigs: {},
@@ -81,6 +88,7 @@ describe("ProviderSettingsManager", () => {
 						consecutiveMistakeLimitMigrated: true,
 						todoListEnabledMigrated: true,
 						claudeCodeLegacySettingsMigrated: true,
+						kilocodeDefaultProfileMigrated: true, // kilocode_change
 					},
 				}),
 			)
@@ -138,6 +146,7 @@ describe("ProviderSettingsManager", () => {
 						todoListEnabledMigrated: true,
 						morphApiKeyMigrated: true,
 						claudeCodeLegacySettingsMigrated: true,
+						kilocodeDefaultProfileMigrated: true, // kilocode_change
 					},
 				}),
 			)
@@ -509,13 +518,14 @@ describe("ProviderSettingsManager", () => {
 				JSON.stringify({
 					currentApiConfigName: "default",
 					apiConfigs: {
-						default: {},
+						default: { apiProvider: "anthropic" }, // kilocode_change: add provider to prevent migration
 					},
 					modeApiConfigs: {
 						code: "default",
 						architect: "default",
 						ask: "default",
 					},
+					migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 				}),
 			)
 
@@ -528,13 +538,14 @@ describe("ProviderSettingsManager", () => {
 			await providerSettingsManager.saveConfig("test", newConfig)
 
 			// Get the actual stored config to check the generated ID
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			const testConfigId = storedConfig.apiConfigs.test.id
 
 			const expectedConfig = {
 				currentApiConfigName: "default",
 				apiConfigs: {
-					default: {},
+					default: { apiProvider: "anthropic" }, // kilocode_change: match fixture
 					test: {
 						...newConfig,
 						id: testConfigId,
@@ -545,6 +556,7 @@ describe("ProviderSettingsManager", () => {
 					architect: "default",
 					ask: "default",
 				},
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: match fixture
 			}
 
 			expect(mockSecrets.store.mock.calls[0][0]).toEqual("roo_cline_config_api_config")
@@ -948,6 +960,7 @@ describe("ProviderSettingsManager", () => {
 					default: { id: "default-id" },
 				},
 				cloudProfileIds: [],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -967,7 +980,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["cloud-profile"]).toEqual({
 				id: "cloud-id-1",
 				apiProvider: "anthropic",
@@ -990,6 +1004,7 @@ describe("ProviderSettingsManager", () => {
 					},
 				},
 				cloudProfileIds: ["cloud-id-1"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1009,7 +1024,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["updated-name"]).toEqual({
 				id: "cloud-id-1",
 				apiProvider: "anthropic",
@@ -1029,6 +1045,7 @@ describe("ProviderSettingsManager", () => {
 					"cloud-profile-2": { id: "cloud-id-2", apiProvider: "openai" as const },
 				},
 				cloudProfileIds: ["cloud-id-1", "cloud-id-2"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1047,7 +1064,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["cloud-profile-1"]).toBeDefined()
 			expect(storedConfig.apiConfigs["cloud-profile-2"]).toBeUndefined()
 			expect(storedConfig.cloudProfileIds).toEqual(["cloud-id-1"])
@@ -1061,6 +1079,7 @@ describe("ProviderSettingsManager", () => {
 					"conflict-name": { id: "local-id", apiProvider: "openai" as const },
 				},
 				cloudProfileIds: [],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1078,7 +1097,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["conflict-name"]).toEqual({
 				id: "cloud-id-1",
 				apiProvider: "anthropic",
@@ -1099,6 +1119,7 @@ describe("ProviderSettingsManager", () => {
 					"conflict-name_local": { id: "local-id-2", apiProvider: "vertex" as const },
 				},
 				cloudProfileIds: [],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1116,7 +1137,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["conflict-name"]).toEqual({
 				id: "cloud-id-1",
 				apiProvider: "anthropic",
@@ -1135,11 +1157,12 @@ describe("ProviderSettingsManager", () => {
 			const existingConfig: ProviderProfiles = {
 				currentApiConfigName: "default",
 				apiConfigs: {
-					default: { id: "default-id" },
+					default: { id: "default-id", apiProvider: "anthropic" as const }, // kilocode_change: add provider to prevent migration
 					"cloud-profile-1": { id: "cloud-id-1", apiProvider: "anthropic" as const },
 					"cloud-profile-2": { id: "cloud-id-2", apiProvider: "openai" as const },
 				},
 				cloudProfileIds: ["cloud-id-1", "cloud-id-2"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1152,7 +1175,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["cloud-profile-1"]).toBeUndefined()
 			expect(storedConfig.apiConfigs["cloud-profile-2"]).toBeUndefined()
 			expect(storedConfig.apiConfigs["default"]).toBeDefined()
@@ -1163,9 +1187,10 @@ describe("ProviderSettingsManager", () => {
 			const existingConfig: ProviderProfiles = {
 				currentApiConfigName: "default",
 				apiConfigs: {
-					default: { id: "default-id" },
+					default: { id: "default-id", apiProvider: "anthropic" as const }, // kilocode_change: add provider to prevent migration
 				},
 				cloudProfileIds: [],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1187,7 +1212,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["valid-profile"]).toBeDefined()
 			expect(storedConfig.apiConfigs["invalid-profile"]).toBeUndefined()
 			expect(storedConfig.cloudProfileIds).toEqual(["cloud-id-1"])
@@ -1197,12 +1223,13 @@ describe("ProviderSettingsManager", () => {
 			const existingConfig: ProviderProfiles = {
 				currentApiConfigName: "default",
 				apiConfigs: {
-					default: { id: "default-id" },
+					default: { id: "default-id", apiProvider: "anthropic" as const }, // kilocode_change: add provider to prevent migration
 					"keep-cloud": { id: "cloud-id-1", apiProvider: "anthropic" as const, apiKey: "secret1" },
 					"delete-cloud": { id: "cloud-id-2", apiProvider: "openai" as const },
 					"rename-me": { id: "local-id", apiProvider: "vertex" as const },
 				},
 				cloudProfileIds: ["cloud-id-1", "cloud-id-2"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1232,7 +1259,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(false)
 			expect(result.activeProfileId).toBe("")
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 
 			// Check deletions
 			expect(storedConfig.apiConfigs["delete-cloud"]).toBeUndefined()
@@ -1269,8 +1297,9 @@ describe("ProviderSettingsManager", () => {
 			mockSecrets.get.mockResolvedValue(
 				JSON.stringify({
 					currentApiConfigName: "default",
-					apiConfigs: { default: { id: "default-id" } },
+					apiConfigs: { default: { id: "default-id", apiProvider: "anthropic" as const } }, // kilocode_change: add provider to prevent migration
 					cloudProfileIds: [],
+					migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 				}),
 			)
 			mockSecrets.store.mockRejectedValue(new Error("Storage failed"))
@@ -1291,6 +1320,7 @@ describe("ProviderSettingsManager", () => {
 					},
 				},
 				cloudProfileIds: ["active-id"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1318,6 +1348,7 @@ describe("ProviderSettingsManager", () => {
 					"backup-profile": { id: "backup-id", apiProvider: "openai" as const },
 				},
 				cloudProfileIds: ["active-id"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1338,6 +1369,7 @@ describe("ProviderSettingsManager", () => {
 					"only-profile": { id: "only-id", apiProvider: "anthropic" as const },
 				},
 				cloudProfileIds: ["only-id"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))
@@ -1350,7 +1382,8 @@ describe("ProviderSettingsManager", () => {
 			expect(result.activeProfileChanged).toBe(true)
 			expect(result.activeProfileId).toBeTruthy() // Should have new default profile ID
 
-			const storedConfig = JSON.parse(mockSecrets.store.mock.calls[0][1])
+			const calls = mockSecrets.store.mock.calls
+			const storedConfig = JSON.parse(calls[calls.length - 1][1]) // kilocode_change: use last call
 			expect(storedConfig.apiConfigs["default"]).toBeDefined()
 			expect(storedConfig.apiConfigs["default"].id).toBe(result.activeProfileId)
 		})
@@ -1363,6 +1396,7 @@ describe("ProviderSettingsManager", () => {
 					"cloud-profile": { id: "cloud-id", apiProvider: "openai" as const },
 				},
 				cloudProfileIds: ["cloud-id"],
+				migrations: { kilocodeDefaultProfileMigrated: true }, // kilocode_change: prevent migration from running
 			}
 
 			mockSecrets.get.mockResolvedValue(JSON.stringify(existingConfig))

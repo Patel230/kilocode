@@ -20,6 +20,7 @@ import { Mode, modes } from "../../shared/modes"
 import { migrateMorphApiKey } from "./kilocode/migrateMorphApiKey"
 import { buildApiHandler } from "../../api"
 import { t } from "../../i18n" // kilocode_change - autocomplete profile type system
+import { getModels } from "../../api/providers/fetchers/modelCache" // kilocode_change: Anonymous kilocode onboarding
 
 // Type-safe model migrations mapping
 type ModelMigrations = {
@@ -52,6 +53,7 @@ export const providerProfilesSchema = z.object({
 			todoListEnabledMigrated: z.boolean().optional(),
 			morphApiKeyMigrated: z.boolean().optional(), // kilocode_change: Morph API key migration
 			claudeCodeLegacySettingsMigrated: z.boolean().optional(),
+			kilocodeDefaultProfileMigrated: z.boolean().optional(), // kilocode_change: Anonymous kilocode onboarding
 		})
 		.optional(),
 })
@@ -314,6 +316,14 @@ export class ProviderSettingsManager {
 					isDirty = true
 				}
 
+				// kilocode_change start: Anonymous kilocode onboarding
+				if (!providerProfiles.migrations.kilocodeDefaultProfileMigrated) {
+					await this.initializeKilocodeDefaultProfile(providerProfiles)
+					providerProfiles.migrations.kilocodeDefaultProfileMigrated = true
+					isDirty = true
+				}
+				// kilocode_change end
+
 				if (isDirty) {
 					await this.store(providerProfiles)
 				}
@@ -430,6 +440,52 @@ export class ProviderSettingsManager {
 			console.error(`[MigrateTodoListEnabled] Failed to migrate todo list enabled setting:`, error)
 		}
 	}
+
+	// kilocode_change start: Anonymous kilocode onboarding
+	/**
+	 * Initialize the default profile with kilocode provider for users without existing config.
+	 * This enables anonymous access to Kilo Code Gateway with a free model.
+	 */
+	private async initializeKilocodeDefaultProfile(providerProfiles: ProviderProfiles): Promise<void> {
+		const FALLBACK_FREE_MODEL = "google/gemma-2-9b-it:free"
+
+		// Check if ANY profile has a configured provider
+		const hasConfiguredProvider = Object.values(providerProfiles.apiConfigs).some(
+			(config) => config.apiProvider !== undefined,
+		)
+
+		// Only initialize if no profiles have a provider configured
+		if (hasConfiguredProvider) {
+			console.log("[ProviderSettingsManager] Skipping kilocode default - user has existing provider config")
+			return
+		}
+
+		try {
+			// Try to fetch models and find a free one
+			const models = await getModels({ provider: "kilocode" })
+			const freeModel = Object.keys(models).find((id) => id.endsWith(":free")) || FALLBACK_FREE_MODEL
+
+			// Update the default profile with kilocode provider
+			const defaultConfig = providerProfiles.apiConfigs["default"]
+			if (defaultConfig) {
+				defaultConfig.apiProvider = "kilocode"
+				defaultConfig.kilocodeModel = freeModel
+				console.log(`[ProviderSettingsManager] Initialized default kilocode profile with model: ${freeModel}`)
+			}
+		} catch (error) {
+			// Use fallback model if API fails
+			console.error("[ProviderSettingsManager] Failed to fetch models, using fallback:", error)
+			const defaultConfig = providerProfiles.apiConfigs["default"]
+			if (defaultConfig) {
+				defaultConfig.apiProvider = "kilocode"
+				defaultConfig.kilocodeModel = FALLBACK_FREE_MODEL
+				console.log(
+					`[ProviderSettingsManager] Initialized default kilocode profile with fallback model: ${FALLBACK_FREE_MODEL}`,
+				)
+			}
+		}
+	}
+	// kilocode_change end
 
 	/**
 	 * Apply model migrations for all providers

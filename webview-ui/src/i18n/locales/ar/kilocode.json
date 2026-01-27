@@ -48,6 +48,7 @@
 			"apiKey": "مفتاح Kilo Code API",
 			"login": "سجّل دخولك في Kilo Code",
 			"logout": "تسجيل الخروج من Kilo Code",
+			"loginForPremiumModels": "سجّل دخولك للوصول إلى النماذج المميزة وغير المحدودة",
 			"providerRouting": {
 				"title": "توجيه المزود",
 				"managedByOrganization": "إدارة توجيه المزود على مستوى المؤسسة",

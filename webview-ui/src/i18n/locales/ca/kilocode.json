@@ -39,6 +39,7 @@
 			"apiKey": "Clau API de Kilo Code",
 			"login": "Iniciar sessió a Kilo Code",
 			"logout": "Tancar sessió de Kilo Code",
+			"loginForPremiumModels": "Inicia sessió per accedir a models premium i il·limitats",
 			"providerRouting": {
 				"title": "Encaminament de proveïdors",
 				"managedByOrganization": "Gestionar encaminament de proveïdors a nivell d'organització",

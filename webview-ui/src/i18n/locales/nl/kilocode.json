@@ -46,6 +46,7 @@
 			"apiKey": "Kilo Code API-sleutel",
 			"login": "Inloggen bij Kilo Code",
 			"logout": "Uitloggen bij Kilo Code",
+			"loginForPremiumModels": "Log in voor toegang tot premium en onbeperkte modellen",
 			"providerRouting": {
 				"title": "Provider Routing",
 				"managedByOrganization": "Beheer Provider Routing op organisatieniveau",
